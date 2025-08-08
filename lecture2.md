@@ -244,17 +244,23 @@ struct Abstract_student_info {
     double final = 0;
     std::vector<double> homework;
     
+    // EXPLICIT constructor that takes parameters
+    // compiler does not generate a default constructor automatically
+    // Abstract_student_info() not available
     Abstract_student_info(const std::string& student_name) : name(student_name) {}
     
     // Pure virtual function makes this class abstract
     virtual double grade() const = 0;
     
-    virtual ~Abstract_student_info() = default;  // Virtual destructor important!
+    virtual ~Abstract_student_info() = default;  // Virtual destructor
 };
 
 // Concrete implementations
 struct BalancedGrading : public Abstract_student_info {
     using Abstract_student_info::Abstract_student_info;  // Inherit constructors
+    // Without inheriting constructors, must write this manually:
+    // BalancedGrading(const std::string& student_name)
+    //     : Abstract_student_info(student_name) {}
     
     double grade() const override {
         double avg = std::accumulate(homework.begin(), homework.end(), 0.0) / homework.size();
@@ -367,6 +373,9 @@ struct NewStudent_info;
 
 // Strategy interface
 struct GradingMachine {
+    // no explicit constructors defined 
+    // GradingMachine() -- default constructor automatically generated
+    // so are copy constructor and move constructor 
     virtual ~GradingMachine() = default;
     virtual double grade(const NewStudent_info& student) = 0;
 };
@@ -375,7 +384,7 @@ struct GradingMachine {
 struct NewStudent_info {
     std::string name;
     double midterm = 0;
-    double final = 0;
+    double final_exam = 0;
     std::vector<double> homework;
     std::unique_ptr<GradingMachine> grading_machine;
     
@@ -402,8 +411,10 @@ struct NewStudent_info {
 
 // Strategy implementations
 struct BalancedGradingMachine : public GradingMachine {
+    // derived class can use base class's default constructor
+    // no constructor inheritance neede 
     double grade(const NewStudent_info& student) override {
-        if (student.homework.empty()) return (student.midterm + student.final) / 2.0;
+        if (student.homework.empty()) return (student.midterm + student.final_exam) / 2.0;
         double avg = std::accumulate(student.homework.begin(), student.homework.end(), 0.0) 
                     / student.homework.size();
         return (student.midterm + student.final + avg) / 3.0;
@@ -412,7 +423,7 @@ struct BalancedGradingMachine : public GradingMachine {
 
 struct IgnoreHomeworkGradingMachine : public GradingMachine {
     double grade(const NewStudent_info& student) override {
-        return (student.midterm + student.final) / 2.0;
+        return (student.midterm + student.final_exam) / 2.0;
     }
 };
 ```
