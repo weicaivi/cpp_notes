@@ -1,4 +1,4 @@
-# Advanced C++ Lecture 2 Summary
+# Lecture 2 Summary
 
 ## Memory Management and Object Lifetime
 

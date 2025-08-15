@@ -1,4 +1,4 @@
-# C++ Lecture 1 - Course Introduction and Language Overview
+# Lecture 1 Summary
 
 ## Essential Resources
 
