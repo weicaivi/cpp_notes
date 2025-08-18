@@ -6,7 +6,7 @@
 
 ### What Are Callables?
 
-In C++, a "callable" is any object that can be invoked with the function call operator `()`. There are four main types of callables:
+A "callable" is any object that can be invoked with the function call operator `()`. There are four main types of callables:
 
 1. **Regular Functions**
 2. **Lambda Expressions**
@@ -831,5 +831,3 @@ struct Functor {
 8. **Use `constexpr` and `consteval`**: Enable compile-time computation
 9. **Prefer composition over inheritance**: Especially for template designs
 10. **Test with multiple types**: Ensure template code works with intended type categories
-
-This comprehensive guide covers the essential C++ concepts from your lecture materials, providing both theoretical understanding and practical implementation examples.
