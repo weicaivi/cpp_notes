@@ -164,13 +164,18 @@ struct Test {
 
 template<typename T>
 void f(typename T::foo) {}  // Definition #1
+// writing `typename T:foo` to disambiguate to mean it's a type
+// if we meant a value, we write `T::foo`
 
 template<typename T>
 void f(T) {}               // Definition #2
+// we write T because T is always a type guaranteed by the template parameter list
+// no ambiguity, T cannot be a value, T can only be a type
+// writing `typename` is not needed and not allowed 
 
 int main() {
-    f<Test>(10);  // Calls #1 - Test::foo exists
-    f<int>(10);   // Calls #2 - int::foo doesn't exist, but no error
+    f<Test>(10);  // Calls #1 - Test::foo exists, T=Test, Test::foo=int → matches f(typename T::foo)
+    f<int>(10);   // Calls #2 - int::foo doesn't exist, but no error, T=int, int::foo doesn't exist → so only f(T) is viable
 }
 ```
 
@@ -276,7 +281,11 @@ For `func(3.14)` where `T = double`:
 // Only enabled for integral types
 template<typename T>
 typename std::enable_if<std::is_integral<T>::value, void>::type
-print_value(T value) {
+print_value(T value) { 
+    // func return type is:
+    // std::enable_if<true, void>::type -> void 
+    // ::type comes from line 215 "using type = T" (called a member typedef, or nested type alias, of the class template enable_if)
+    // "conditionally declared void functions"
     std::cout << "Integer: " << value << std::endl;
 }
 
@@ -302,6 +311,11 @@ template<typename T>
 typename std::enable_if<condition, ReturnType>::type func();
 
 // Method 2: In template parameter list (cleaner)
+// first template parameter: typename T
+// second, unamed type parameter with a default argument, never used explicitly inside the function
+// if T is integral, std::is_integral_v<T> is true, so std::enable_if_t<true> is just void
+// second template parameter becomes typename = void, perfectly valid and function exists
+// if false, SFINAE
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
 void func(T value) {
     std::cout << "Integral: " << value << std::endl;
@@ -320,6 +334,7 @@ void func(T value, std::enable_if_t<std::is_integral_v<T>>* = nullptr) {
 #include <type_traits>
 
 // Constrained GCD function - only works with integral types
+// the specifier constexpr makes the function eligible for compile-time eval, but doesn't force it
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
 constexpr T gcd(T a, T b) {
     return b == 0 ? a : gcd(b, a % b);
@@ -345,6 +360,8 @@ int main() {
 
 // Function for containers with random access iterators (like vector)
 template<typename Container>
+// the default second template argument of enable_if_t is void
+// this is effectively void sort_container(Container& c)
 std::enable_if_t<
     std::is_same_v<
         typename std::iterator_traits<typename Container::iterator>::iterator_category,
@@ -385,6 +402,8 @@ int main() {
 ```cpp
 // Only for arithmetic types
 template<typename T, std::enable_if_t<std::is_arithmetic_v<T>, int> = 0>
+// the point of `= 0` is just a dummy that defaults to 0
+// without it, would be forced to write `multiply_by_two<int, 0>(5), which is ugly
 T multiply_by_two(T value) {
     return value * 2;
 }
@@ -392,7 +411,12 @@ T multiply_by_two(T value) {
 // Only for pointer types
 template<typename T, std::enable_if_t<std::is_pointer_v<T>, int> = 0>
 auto dereference_safely(T ptr) -> decltype(*ptr) {
+    // decltype(*ptr) means “deduce the type of the expression *ptr”
+    // If T = int*, then *ptr is an int&, so the return type is int&
+    // If T = const double*, then *ptr is const double&
+    // The return type is exactly “whatever dereferencing the pointer yields.”
     return ptr ? *ptr : decltype(*ptr){};
+    //  decltype(*ptr){} value-initializes an object of the dereferenced type
 }
 ```
 
@@ -400,6 +424,8 @@ auto dereference_safely(T ptr) -> decltype(*ptr) {
 
 ```cpp
 template<typename T, typename Enable = void>
+// Enable exists solely to be manipulated by enable_if_t in partial specializations
+// sort of provides a hook for SFINAE
 class Serializer {
 public:
     static void serialize(const T& obj) {
@@ -411,6 +437,7 @@ public:
 // Specialization for integral types
 template<typename T>
 class Serializer<T, std::enable_if_t<std::is_integral_v<T>>> {
+// condition is true, Enable = void (matching the primary’s second parameter kind), so specialization compiles
 public:
     static void serialize(const T& obj) {
         std::cout << "Integer serialization: " << obj << std::endl;
@@ -432,19 +459,30 @@ public:
 ```cpp
 template<typename Derived>
 class Base {
-    // Ensure Derived actually derives from Base<Derived>
+    // Compilte-time enforcement: ensure Derived actually derives from Base<Derived>
     static_assert(std::is_base_of_v<Base<Derived>, Derived>, 
                   "CRTP violation: Derived must inherit from Base<Derived>");
-    
+
+ // Base is a class template that takes the derived class as its template parameter
+
 public:
-    template<typename T = Derived>
+    template<typename T = Derived> // template parameter makes the function itself a function template
+    // a trick to allow SFINAE with enable_if in the rturn type
+    //  resolves to void if condition is true.
+	// If T is not Derived, substitution fails and the function is removed from overload resolution
+    // In this case, since T defaults to Derived, the condition is always true -> the function exists.
     std::enable_if_t<std::is_same_v<T, Derived>, void>
     call_derived_method() {
         static_cast<Derived*>(this)->derived_method();
+        // `this` is a pointer to Base<Derived>
+        // static_cast<Derived*>(this) converts it to a pointer to the actual derived class
+        // then we can call methods defined only in Derived
+        // !allows the base class to call methods of the derived class safely at compile time, without virtual functions
     }
 };
 
 class MyClass : public Base<MyClass> {
+    // Derived = MyClass, derived class passes itself as a template argument to its base class
 public:
     void derived_method() {
         std::cout << "Derived method called" << std::endl;
@@ -494,28 +532,34 @@ int main() {
 ```
 
 ##### Member Function enable_if
-
+mimics the behavior of `std::optional<T>`
 ```cpp
 template<typename T>
+// Optional is a class template parametrized by a type T
+// designed to optionally hold a value of type T
 class Optional {
 private:
-    bool has_value_ = false;
+    bool has_value_ = false; // tracks whether the Optional currently holds a valid T
     alignas(T) char storage_[sizeof(T)];
+    // storage_: raw, untyped memory large enough to store a T
+    // alignas(T): ensure the memory is correctly aligned for T
+    // we do manual placement new and manual destructor calls to control construction and destruction
     
 public:
     // Constructor only available for copy-constructible types
-    template<typename U = T>
+    template<typename U = T> // U = T allows using SFINAE on the constructor
     Optional(const U& value, 
              std::enable_if_t<std::is_copy_constructible_v<U>, int> = 0) {
-        new(storage_) T(value);
+        new(storage_) T(value); // placement new, constructs T in the raw storage
         has_value_ = true;
     }
+    
     
     // Move constructor only available for move-constructible types
     template<typename U = T>
     Optional(U&& value,
              std::enable_if_t<std::is_move_constructible_v<U>, int> = 0) {
-        new(storage_) T(std::move(value));
+        new(storage_) T(std::move(value)); // move-construct the value into the storage
         has_value_ = true;
     }
     
@@ -523,7 +567,7 @@ public:
     template<typename U = T>
     std::enable_if_t<std::is_assignable_v<T&, const U&>, Optional&>
     operator=(const U& value) {
-        if (has_value_) {
+        if (has_value_) { // assign to the existing object
             reinterpret_cast<T&>(storage_) = value;
         } else {
             new(storage_) T(value);
@@ -534,7 +578,7 @@ public:
     
     ~Optional() {
         if (has_value_) {
-            reinterpret_cast<T&>(storage_).~T();
+            reinterpret_cast<T&>(storage_).~T(); // Uses reinterpret_cast<T&> to access the object in raw storage
         }
     }
 };
@@ -650,8 +694,6 @@ create_object() {
     return std::make_unique<T>();
 }
 ```
-
----
 
 ---
 
@@ -1030,16 +1072,20 @@ Analysis of the three distributed counter versions shows evolution of thread-saf
 
 ```cpp
 // Version 1: Simple mutex (high contention)
+// every increment by any thread must acquire the same lock
+// If many threads increment at once, they block each other -> poor scalability
 class DistributedCounter1 {
     std::shared_mutex mtx;
     long long count = 0;
     
 public:
+    // takes a unique lock for writing
     void operator++() {
         std::unique_lock lock(mtx);
         ++count;
     }
     
+    // takes a shared lock for reading 
     long long get() const {
         std::shared_lock lock(mtx);
         return count;
@@ -1047,6 +1093,12 @@ public:
 };
 
 // Version 2: Bucket-based (reduced contention)
+// multiple “buckets”, each with its own counter and mutex
+// Each thread hashes its thread::id to choose a bucket
+// Still some possible collisions if threads hash to the same bucket
+// Buckets may be stored contiguously in memory, can suffer false sharing
+// which is when multiple threads write to variables on the same cache line,
+// causing performance degradation even if the variables are logically independent
 class DistributedCounter2 {
     struct Bucket {
         std::shared_mutex mtx;
@@ -1057,12 +1109,17 @@ class DistributedCounter2 {
     std::vector<Bucket> buckets{BUCKET_COUNT};
     
 public:
+    // Increment only locks one bucket, not the entire counter
     void operator++() {
         size_t index = std::hash<std::thread::id>{}(std::this_thread::get_id()) % BUCKET_COUNT;
+        // std::hash is a functor, produces a size_t hash for a thread ID
+        // {} constructs a temporary hash object
+        // operator()(...) immediately calls the hash object with the thread ID
         std::unique_lock lock(buckets[index].mtx);
         ++buckets[index].count;
     }
     
+    // sums all buckets with shared locks
     size_t get() const {
         return std::accumulate(buckets.begin(), buckets.end(), size_t{0},
             [](size_t acc, const Bucket& b) {
@@ -1073,11 +1130,17 @@ public:
 };
 
 // Version 3: Cache-line padding (avoid false sharing)
+// Same idea as Version 2: multiple buckets, each with its own mutex
+// New addition: Each bucket is aligned to and thu occupies a full cache line (usually 64 bytes)
+// Avoids cache-coherence bottlenecks, better scaling under high concurrency
 class DistributedCounter3 {
     struct alignas(64) Bucket {  // Align to cache line
         std::shared_mutex mtx;
         size_t count = 0;
         char padding[64 - sizeof(mtx) - sizeof(count)];  // Prevent false sharing
+        // char padding[...] ensures that each Bucket occupies exactly one cache line
+        // Calculates how many bytes remain in the cache line after mtx and count
+        // Fills the remainder with a dummy char array (padding)
     };
     
     static constexpr size_t BUCKET_COUNT = 128;
