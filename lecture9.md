@@ -1,4 +1,4 @@
-# C++ Lecture 9: SOLID Principles, Design Patterns, Type Erasure & Best Practices
+# Lecture 9 Summary
 
 ## SOLID Principles
 
