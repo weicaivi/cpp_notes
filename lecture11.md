@@ -1,12 +1,10 @@
 # Lecture 11 Summary
 
----
-
-## Fundamental Types Deep Dive {#fundamental-types}
+## Fundamental Types Deep Dive
 
 ### Philosophy: Hardware-Agnostic Design
 
-C++ fundamental types are **implementation-defined** rather than fixed-size to optimize for different hardware architectures. This design principle reflects C++'s philosophy of "zero-overhead abstraction" - you shouldn't pay for what you don't use.
+C++ fundamental types are **implementation-defined** rather than fixed-size to optimize for different hardware architectures. This design principle reflects C++'s philosophy of "zero-overhead abstraction" - you shouldn't pay for what you don't use. C++'s approach allows optimal performance on diverse platforms from embedded microcontrollers to high-performance computing clusters, while Java's fixed sizes may be suboptimal on certain architectures.
 
 ```cpp
 // Java approach: Fixed sizes everywhere
@@ -22,12 +20,9 @@ long    // At least 32 bits
 long long // At least 64 bits
 ```
 
-### Key Insight
-C++'s approach allows optimal performance on diverse platforms from embedded microcontrollers to high-performance computing clusters, while Java's fixed sizes may be suboptimal on certain architectures.
-
 ---
 
-## Behavior Specification Categories {#behavior-categories}
+## Behavior Specification Categories
 
 ### 1. Undefined Behavior (UB)
 **Definition**: The program can do anything, including "halt and catch fire."
@@ -79,7 +74,7 @@ std::cout << "pointer size: " << sizeof(void*) << " bytes" << std::endl;
 
 ---
 
-## Integer Types and Hardware Compatibility {#integer-types}
+## Integer Types and Hardware Compatibility
 
 ### Standard Integer Types
 ```cpp
@@ -171,7 +166,7 @@ public:
 
 ---
 
-## Floating Point and Character Types {#floating-character}
+## Floating Point and Character Types
 
 ### Floating Point Types
 ```cpp
@@ -239,7 +234,7 @@ auto u32str = U"Hello";    // UTF-32 string
 
 ---
 
-## Advanced Variadics {#advanced-variadics}
+## Advanced Variadics
 
 ### Variadic Template Fundamentals
 ```cpp
@@ -335,15 +330,18 @@ auto person = make_unique<Person>("Alice", 30);  // Perfect forwarding
 
 ---
 
-## Tuple Implementation and Metaprogramming {#tuple-implementation}
+## Tuple Implementation and Metaprogramming
 
 ### Tuple1: Recursive Composition
+Has-a: stores a member of type Tuple1<Ts...> inside each node
 ```cpp
+// forward declaration of a Tuple1 template with parameter pack <Ts...>
 template<typename ...Ts> 
-struct Tuple1;
+struct Tuple1; 
 
+// specialization for the empty pack <> (base case)
 template<> 
-struct Tuple1<> {};  // Empty tuple base case
+struct Tuple1<> {};
 
 template<typename T, typename ...Ts>
 struct Tuple1<T, Ts...> {
@@ -356,6 +354,10 @@ struct Tuple1<T, Ts...> {
 ```
 
 ### Tuple2: Empty Base Optimization
+Is-a: derives from Tuple2<Ts...>
+
+- If a stored type is an empty class, the base class subobject can occupy zero bytes (per the standard’s EBO rule)
+- Composition can’t normally take advantage of this — an empty member still consumes at least 1 byte
 ```cpp
 template<typename ...Ts> 
 struct Tuple2;
@@ -367,9 +369,15 @@ template<typename T, typename ...Ts>
 struct Tuple2<T, Ts...> : public Tuple2<Ts...> {  // Inheritance
     Tuple2(T const &t, Ts const &... ts) 
         : Tuple2<Ts...>(ts...), val(t) {}
-    
+    //  recursively constructs the base class part first, passing along all remaining values
     T val;
 };
+/**
+So for Tuple2<int,double,char>:
+	- Top level stores an int and inherits from Tuple2<double,char>.
+	- That level stores a double and inherits from Tuple2<char>.
+	- And so on until the empty specialization.
+*/
 ```
 
 **Memory Layout Comparison**:
@@ -386,11 +394,18 @@ std::cout << sizeof(Tuple2<int>) << std::endl;  // Typically 4 bytes
 ```
 
 ### Advanced Getter Implementation
+template recursion + base casting to walk the inheritance chain
 ```cpp
 // Getter by index
+
+// declaration of a family of helper structs
+// i is the index of the element we want
+// Ts... are the types stored in the tuple
+// actual logic is provided by partial specializations
 template<int i, typename ...Ts>
 struct Getter2;
 
+// base case - index 0
 template<typename T, typename ...Ts>
 struct Getter2<0, T, Ts...> {
     static auto& get(Tuple2<T, Ts...>& tup) {
@@ -400,19 +415,24 @@ struct Getter2<0, T, Ts...> {
 
 template<int i, typename T, typename ...Ts>
 struct Getter2<i, T, Ts...> {
-    static auto& get(Tuple2<T, Ts...>& tup) {
+    // Tuple2<T, Ts...> inherits from Tuple2<Ts...>
+    // We treat tup as a reference to its base (Tuple2<Ts...>) and recurse with i-1
+    // Each step peels off one type and decreases the index until it hits zero
+    static auto& get(Tuple2<T, Ts...>& tup) { 
         Tuple2<Ts...>& restOfVals = tup;  // Cast to base
         return Getter2<i-1, Ts...>::get(restOfVals);  // Recurse
     }
 };
 
+// Convenience function, User-facing, get<i>(tuple)
+// Just forwards to the appropriate specialization of Getter2 to hide the recursion details
 template<int i, typename ...Ts>
 auto& get(Tuple2<Ts...>& tup) {
     return Getter2<i, Ts...>::get(tup);
 }
 ```
 
-### Getter by Type (Homework Solution)
+### Getter by Type
 ```cpp
 // Type-based getter implementation
 template<typename Target, typename... Ts>
@@ -489,7 +509,7 @@ using Replace_t = typename Replace<T, A, B>::type;
 
 ---
 
-## IndentStream Case Study {#indentstream-case-study}
+## IndentStream Case Study
 
 ### Custom Stream Buffer Implementation
 ```cpp
@@ -608,7 +628,7 @@ int fib(int n) {
 
 ---
 
-## Practical Code Examples {#practical-examples}
+## Practical Code Examples
 
 ### Enhanced Regex Example
 ```cpp
@@ -835,19 +855,3 @@ int main() {
     return 0;
 }
 ```
-
----
-
-## Key Takeaways
-
-1. **Type System Philosophy**: C++'s implementation-defined approach enables hardware optimization while maintaining portability through minimum guarantees.
-
-2. **Variadic Templates**: Essential for modern C++ library design, enabling type-safe alternatives to C-style varargs.
-
-3. **Metaprogramming**: Template specialization and SFINAE enable compile-time computation and type manipulation.
-
-4. **Stream Customization**: Understanding stream buffers enables powerful I/O customization without sacrificing performance.
-
-5. **Modern Alternatives**: C++17 fold expressions and C++20 concepts provide cleaner syntax for complex template operations.
-
-The progression from basic variadics to advanced metaprogramming demonstrates C++'s evolution toward more expressive and safer template programming while maintaining zero-overhead abstractions.
